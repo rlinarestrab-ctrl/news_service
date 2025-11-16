@@ -21,7 +21,7 @@ services:
     container_name: news-backend
     command: ["/app/entrypoint.sh"]
     env_file:
-      - .env
+      - .env.dev
     ports:
       - "8004:8000"
     depends_on:
