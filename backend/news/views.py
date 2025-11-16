@@ -31,13 +31,25 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 class PublicacionViewSet(viewsets.ModelViewSet):
     serializer_class = PublicacionSerializer
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+    permission_classes = [AllowAny]  # 👈 por defecto, todo el mundo puede leer
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy", "eliminar"]:
-            if self.action in ["update", "partial_update", "destroy"]:
-                return [EsAutorOAdmin()]
-            return [PuedePublicar()]
-        return [permissions.AllowAny()]
+        # 🔹 Crear publicación: debe poder publicar alguien autorizado
+        if self.action == "create":
+            # si quieres que solo usuarios logueados puedan publicar:
+            return [IsAuthenticated(), PuedePublicar()]
+
+        # 🔹 Actualizar / eliminar publicación: solo autor o admin
+        if self.action in ["update", "partial_update", "destroy", "eliminar"]:
+            return [IsAuthenticated(), EsAutorOAdmin()]
+
+        # 🔹 Like / dislike: solo usuarios autenticados
+        if self.action == "like_toggle":
+            return [IsAuthenticated()]
+
+        # 🔹 Cualquier otra acción (list, retrieve, listar_comentarios, etc.)
+        #     → pública, sin token
+        return [AllowAny()]
 
     def get_queryset(self):
         user = getattr(self.request, "user", None)
@@ -57,18 +69,21 @@ class PublicacionViewSet(viewsets.ModelViewSet):
         if estado:
             q = q.filter(estado=estado)
 
+        # 🔹 Filtro por rol: todos ven "publicado", admin/institución ven más
         rol = (
             (getattr(user, "rol", None) or "").lower()
             if user and getattr(user, "is_authenticated", False)
             else None
         )
         if rol == "admin":
-            pass  # ve todo
+            # admin ve todo
+            pass
         elif rol == "institucion":
             mine = Q(autor_id=str(user.id))
             published = Q(estado="publicado")
             q = q.filter(mine | published)
         else:
+            # público general (no logueado / estudiante / etc.) solo ve publicado
             q = q.filter(estado="publicado")
 
         return q
@@ -85,7 +100,6 @@ class PublicacionViewSet(viewsets.ModelViewSet):
         }
         serializer.save(**data)
 
-    # -------------------- 🗑️ ELIMINAR PUBLICACIÓN --------------------
     @action(detail=True, methods=["delete"], permission_classes=[EsAutorOAdmin])
     def eliminar(self, request, pk=None):
         publicacion = self.get_object()
@@ -101,10 +115,11 @@ class PublicacionViewSet(viewsets.ModelViewSet):
             )
 
         publicacion.delete()
-        return Response({"detail": "✅ Publicación eliminada correctamente."},
-                        status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"detail": "✅ Publicación eliminada correctamente."},
+            status=status.HTTP_204_NO_CONTENT,
+        )
 
-    # -------------------- ❤️ LIKE / DISLIKE --------------------
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def like_toggle(self, request, pk=None):
         pub = self.get_object()
@@ -116,15 +131,22 @@ class PublicacionViewSet(viewsets.ModelViewSet):
         Like.objects.create(publicacion=pub, usuario_id=user.id)
         return Response({"liked": True})
 
-    # -------------------- 💬 LISTAR COMENTARIOS --------------------
-    @action(detail=True, methods=["get"], url_path="comentarios", permission_classes=[permissions.AllowAny])
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="comentarios",
+        permission_classes=[permissions.AllowAny],
+    )
     def listar_comentarios(self, request, pk=None):
         publicacion = self.get_object()
-        comentarios = Comentario.objects.filter(publicacion=publicacion).order_by("-fecha_comentario")
-        serializer = ComentarioSerializer(comentarios, many=True, context={"request": request})
+        comentarios = Comentario.objects.filter(publicacion=publicacion).order_by(
+            "-fecha_comentario"
+        )
+        serializer = ComentarioSerializer(
+            comentarios, many=True, context={"request": request}
+        )
         return Response(serializer.data)
-
-
+        
 # -------------------- 🔹 COMENTARIOS --------------------
 class ComentarioViewSet(viewsets.ModelViewSet):
     """
