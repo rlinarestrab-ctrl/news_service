@@ -56,37 +56,33 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "news_service.wsgi.application"
 
-# --- Base de datos ---
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB", "news_service_db"),
+        "USER": os.getenv("POSTGRES_USER", "postgres"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
+        "HOST": os.getenv("POSTGRES_HOST", "db"),
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+    }
+}
+
+# En producción (Render + Supabase)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    # Producción: usar DATABASE_URL (Supabase / Render)
-    DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            ssl_require=True,
-        )
-    }
+    db_from_env = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=0,          # o 60, pero no infinito
+        conn_health_checks=True  # importante para conexiones muertas
+    )
 
-    # Permite definir el esquema vía variable de entorno
-    DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
-    DATABASES["default"]["OPTIONS"] = {
-        "options": f"-c search_path={DB_SCHEMA},public"
-    }
+    # Asegurar opciones y search_path al esquema de news
+    options = db_from_env.get("OPTIONS", {})
+    options["options"] = "-c search_path=news_service,public"
+    db_from_env["OPTIONS"] = options
 
-else:
-    # Desarrollo local (Docker)
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "news_service_db"),
-            "USER": os.getenv("POSTGRES_USER", "postgres"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
-            "HOST": os.getenv("POSTGRES_HOST", "db"),
-            "PORT": int(os.getenv("POSTGRES_PORT", "5432")),
-        }
-    }
+    DATABASES["default"] = db_from_env
 
 # --- Validadores de contraseñas (sin uso por ahora) ---
 AUTH_PASSWORD_VALIDATORS = []
