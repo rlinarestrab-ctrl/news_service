@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    container_name: news-db
+    environment:
+      POSTGRES_DB: news_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - news_net
+
+  backend:
+    build:
+      context: ./backend
+    container_name: news-backend
+    command: ["/app/entrypoint.sh"]
+    env_file:
+      - .env
+    ports:
+      - "8004:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+    networks:
+      - news_net
+
+volumes:
+  db_data:
+
+networks:
+  news_net:
+    driver: bridge
